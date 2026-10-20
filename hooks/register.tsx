@@ -3,7 +3,7 @@ import type { EngineInterface, PluginOptions, Register } from 'claude-code'
 
 import type { RouteEntry, RouterStats, RouterTier } from '../types'
 import { classify } from './classify'
-import { CACHE_TTL_MS, contextOf, DEFAULT_MODELS, displayOf, gate, tierOf, usdOf } from './cost'
+import { CACHE_TTL_MS, contextOf, DEFAULT_MODELS, displayOf, gate, isPriced, tierOf, usdOf } from './cost'
 import type { Gate, Models } from './cost'
 import { dashboardView, gauge } from './dashboard'
 import type { Mark } from './dashboard'
@@ -17,7 +17,8 @@ const log = atom({ plugin: 'model-router', key: 'log' } as const, [])
 
 const STORED_ENABLED = 'isEnabled'
 const STORED_STATS = 'allTimeStats'
-const FORCE = /^!(haiku|sonnet|opus)\s+/i
+// `+`, as a leading `!` puts Claude Code's prompt in shell mode.
+const FORCE = /^\+(haiku|sonnet|opus)\s+/i
 const TIERS: readonly string[] = ['haiku', 'sonnet', 'opus']
 const USAGE = 'Usage: /router on | off | pin <haiku|sonnet|opus> | unpin | stats | dashboard'
 const PANE = 'model-router'
@@ -77,17 +78,29 @@ const decide = async (
   return asked.tier === undefined ? undefined : { tier: asked.tier, reason: 'classified' }
 }
 
-/** `<home>/.claude/model-router/sessions/<id>.json`, read by the status line; none outside a `.claude` folder. */
-const routeFileOf =(pluginRoot: string, sessionId: string) => {
-  const at = pluginRoot.indexOf('/.claude/')
+const isSet = (value: string | undefined): value is string => value !== undefined && value !== ''
 
-  return at === -1 ? undefined : `${pluginRoot.slice(0, at)}/.claude/model-router/sessions/${sessionId}.json`
+/** Claude Code's config folder: `$CLAUDE_CONFIG_DIR`, else `~/.claude`; none without a home. */
+const configDirOf = async ($: EngineInterface) => {
+  const dir = await $.env.get('CLAUDE_CONFIG_DIR')
+  if (isSet(dir)) return dir
+  const home = await $.env.get('HOME')
+  const profile = isSet(home) ? home : await $.env.get('USERPROFILE')
+
+  return isSet(profile) ? `${profile}/.claude` : undefined
+}
+
+/** `<config dir>/model-router/sessions/<id>.json`, read by the status line. */
+const routeFileOf = async ($: EngineInterface, sessionId: string) => {
+  const dir = await configDirOf($)
+
+  return dir === undefined ? undefined : `${dir}/model-router/sessions/${sessionId}.json`
 }
 
 /** Tells the status line which model the session's last request went to; a failed write only leaves it stale. */
 const writeRoute = async ($: EngineInterface, model: string) => {
   try {
-    const path = routeFileOf($.plugin.root, await $.session.id())
+    const path = await routeFileOf($, await $.session.id())
     if (path !== undefined) await $.fs.write(path, `${JSON.stringify({ model, display: displayOf(model) })}\n`)
   } catch {
     // the footer keeps the session's model
@@ -108,6 +121,8 @@ export const register: Register = (on, options) => {
   let turnCount = 0
   const prompts = new Map<string, string>()
   let routed: string | undefined
+  // Whether this load has said that a model outside the price table keeps turns where they are.
+  let isUnknownSaid = false
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -388,6 +403,15 @@ export const register: Register = (on, options) => {
       turn.model = g.model
       kept = g.kept
       $.ui.status(label(turn.decision, g, models))
+      if (g.kept === 'unknown' && !isUnknownSaid) {
+        isUnknownSaid = true
+        const from = warm ?? e.model
+        const why =
+          tierOf(from, models) === undefined
+            ? `${from} is not one of its tiers (${models.haiku}, ${models.sonnet}, ${models.opus})`
+            : `${isPriced(from) ? models[turn.decision.tier] : from} has no price in its table`
+        $.ui.toast(`model-router: turns stay on ${from}, as ${why}.`)
+      }
     } else if (turn === undefined && e.index === 0) {
       $.ui.status((await read($, isEnabled)) ? undefined : 'router: off')
     }

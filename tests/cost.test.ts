@@ -31,6 +31,14 @@ describe('tierOf', () => {
   test('does not know other models', () => {
     expect(tierOf('claude-fable-5-1', models)).toBeUndefined()
   })
+
+  test('reads Bedrock and Vertex spellings of a configured id', () => {
+    expect(tierOf('us.anthropic.claude-opus-5-5', models)).toBe('opus')
+    expect(tierOf('global.anthropic.claude-sonnet-5-5', models)).toBe('sonnet')
+    expect(tierOf('anthropic.claude-haiku-5-5', models)).toBe('haiku')
+    expect(tierOf('us.anthropic.claude-haiku-4-5-20251001-v1:0', HAIKU_45)).toBe('haiku')
+    expect(tierOf('claude-haiku-4-5@20251001', HAIKU_45)).toBe('haiku')
+  })
 })
 
 describe('usdOf', () => {
@@ -45,6 +53,12 @@ describe('usdOf', () => {
   test('prices Haiku 4.5 by its own table, a date or provider prefix ignored', () => {
     near(usdOf('claude-haiku-4-5-20251001', usage({ input_tokens: 1000, output_tokens: 1000 })), 0.006)
     near(usdOf('aws/claude-haiku-4-5', usage({ input_tokens: 1000, output_tokens: 1000 })), 0.006)
+  })
+
+  test('prices Bedrock and Vertex ids by the same table', () => {
+    near(usdOf('us.anthropic.claude-opus-5-5', usage({ input_tokens: 1000, output_tokens: 1000 })), 0.024)
+    near(usdOf('us.anthropic.claude-haiku-4-5-20251001-v1:0', usage({ input_tokens: 1000, output_tokens: 1000 })), 0.006)
+    near(usdOf('claude-haiku-4-5@20251001', usage({ input_tokens: 1000, output_tokens: 1000 })), 0.006)
   })
 
   test('prices an unknown model at zero', () => {
@@ -132,6 +146,8 @@ describe('displayOf', () => {
     expect(displayOf('claude-haiku-4-5-20251001')).toBe('Haiku 4.5')
     expect(displayOf('claude-opus-5-5[1m]')).toBe('Opus 5.5')
     expect(displayOf('aws/claude-sonnet-5-5')).toBe('Sonnet 5.5')
+    expect(displayOf('us.anthropic.claude-haiku-4-5-20251001-v1:0')).toBe('Haiku 4.5')
+    expect(displayOf('claude-haiku-4-5@20251001')).toBe('Haiku 4.5')
   })
 
   test('leaves an id of another shape as it is', () => {

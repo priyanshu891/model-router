@@ -27,23 +27,34 @@ type World = {
   classified: number
   /** Each file the plugin wrote, in order. */
   written: { path: string; text: string }[]
+  /** Each toast the plugin raised, in order. */
+  toasts: string[]
 }
 
 /** The engine beneath the plugin, answered by the test. */
-const world = (on: On, classifier: ModelCompleteResult = { isAnswered: false, reason: 'aborted', usage: SMALL }) => {
-  const w: World = { sent: [], submitted: [], usage: SMALL, refused: [], classified: 0, written: [] }
+const world = (
+  on: On,
+  classifier: ModelCompleteResult | 'throws' = { isAnswered: false, reason: 'aborted', usage: SMALL },
+  env: Record<string, string> = { HOME: '/home/u' },
+) => {
+  const w: World = { sent: [], submitted: [], usage: SMALL, refused: [], classified: 0, written: [], toasts: [] }
   mock.clock(on)
   mock.store(on)
+  mock.env(on, env)
   on('prompt.submit', ($, e) => {
     w.submitted.push(e.text)
     return { text: e.text }
   })
   on('model.complete', () => {
     w.classified += 1
+    if (classifier === 'throws') throw new Error('the classifier failed')
     return { value: classifier }
   })
   on('ui.status', () => ({ value: undefined }))
-  on('ui.toast', () => ({ value: undefined }))
+  on('ui.toast', ($, e) => {
+    w.toasts.push(e.text)
+    return { value: undefined }
+  })
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.id', () => ({ value: 'session-1' }))
   on('session.model', () => ({ value: OPUS }))
@@ -99,9 +110,9 @@ const router = ($: Engine, args: string) =>
   })
 
 describe('model-router', () => {
-  test('a !haiku prefix forces haiku and is stripped', async ($, on) => {
+  test('a +haiku prefix forces haiku and is stripped', async ($, on) => {
     const w = world(on)
-    await turn($, '!haiku what is x')
+    await turn($, '+haiku what is x')
 
     expect(w.submitted).toEqual(['what is x'])
     expect(w.sent).toEqual([HAIKU])
@@ -168,7 +179,7 @@ describe('model-router', () => {
 
   test('the configured haiku model is the one a lookup goes to', { options: { haikuModel: HAIKU_45 } }, async ($, on) => {
     const w = world(on)
-    await turn($, '!haiku what is x')
+    await turn($, '+haiku what is x')
 
     expect(w.sent).toEqual([HAIKU_45])
   })
@@ -197,11 +208,39 @@ describe('model-router', () => {
     await turn($, 'where is the config?')
     await turn($, 'design a caching layer for the API')
 
-    expect(w.written.map(f => f.path.endsWith('/.claude/model-router/sessions/session-1.json'))).toEqual([true, true])
+    expect(w.written.map(f => f.path)).toEqual([
+      '/home/u/.claude/model-router/sessions/session-1.json',
+      '/home/u/.claude/model-router/sessions/session-1.json',
+    ])
     expect(w.written.map(f => JSON.parse(f.text))).toEqual([
       { model: HAIKU, display: 'Haiku 5.5' },
       { model: OPUS, display: 'Opus 5.5' },
     ])
+  })
+
+  test('the status line file follows CLAUDE_CONFIG_DIR', async ($, on) => {
+    const w = world(on, undefined, { HOME: '/home/u', CLAUDE_CONFIG_DIR: '/cfg' })
+    await turn($, 'what is x')
+
+    expect(w.written.map(f => f.path)).toEqual(['/cfg/model-router/sessions/session-1.json'])
+  })
+
+  test('a session model outside the price table is said once, not routed', async ($, on) => {
+    const w = world(on)
+    await turn($, 'what is x', 'claude-fable-5-1')
+    await turn($, 'where is the config?', 'claude-fable-5-1')
+
+    expect(w.sent).toEqual(['claude-fable-5-1', 'claude-fable-5-1'])
+    expect(w.toasts).toHaveLength(1)
+    expect(w.toasts[0]).toContain('claude-fable-5-1')
+  })
+
+  test('a classifier that throws leaves the prompt and the session model alone', async ($, on) => {
+    const w = world(on, 'throws')
+    await turn($, 'hmm')
+
+    expect(w.submitted).toEqual(['hmm'])
+    expect(w.sent).toEqual([OPUS])
   })
 
   test('/router dashboard opens a pane listing each turn, newest first', async ($, on) => {

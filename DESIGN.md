@@ -24,9 +24,10 @@ than it saves.
 
 1. `prompt.submit` — main loop, not `e.command`, not `e.isMeta`.
    Decision order, first match wins:
-   1. Prefix `!opus` / `!sonnet` / `!haiku` (case-insensitive, followed by
+   1. Prefix `+opus` / `+sonnet` / `+haiku` (case-insensitive, followed by
       whitespace): tier forced, prefix stripped via `next({ ...e, text })`.
-      Reason `forced`.
+      Reason `forced`. Not `!`: a leading `!` puts Claude Code's prompt in
+      shell mode, so the text never reaches `prompt.submit`.
    2. Router off → no decision.
    3. `/router pin <tier>` set → that tier. Reason `pinned`.
    4. Rules (`classify.ts`) → tier + reason, or `ambiguous`.
@@ -90,9 +91,11 @@ reference. Unknown model ids are not routed from or to (keep).
 Tier → model id comes from the plugin's settings (`haikuModel`, `sonnetModel`,
 `opusModel`), defaulting to `claude-haiku-5-5`, `claude-sonnet-5-5`,
 `claude-opus-5-5`, since a gateway may serve other ids. Prices and context
-windows are keyed by the id with any `[1m]` suffix, `provider/` prefix and
-date removed; the table holds Opus 5.5, Sonnet 5.5, Haiku 5.5 and Haiku 4.5
-(200K window). A model outside it is not routed to or from.
+windows are keyed by the id with any `[1m]` suffix, `provider/` prefix,
+Bedrock `<region>.anthropic.` prefix and `-v1:0` version, and `-<date>` or
+Vertex `@<date>` removed; the table holds Opus 5.5, Sonnet 5.5, Haiku 5.5 and
+Haiku 4.5 (200K window). A model outside it is not routed to or from, and the
+first turn kept that way in a load says so in a toast, naming the model.
 
 A routed request that fails without an interrupt (a gateway's 403, say) puts
 its model on a session list the router no longer sends to, with a toast; a
@@ -128,10 +131,10 @@ The session's own model is what Claude Code's status line JSON names, and a
 mod cannot change it. So on the first step of each main-loop turn, when the
 model sent differs from the one last written, the mod writes
 `{ model, display }` (`displayOf`: `Haiku 4.5`) to
-`~/.claude/model-router/sessions/<session id>.json`, `~/.claude` taken from the
-plugin's own path (no file outside a `.claude` folder). The user's
-`~/.claude/statusline-command.sh` reads it by `session_id` and, when its base id
-differs from `model.id`'s, draws `Haiku 4.5 ← routed (Opus 5.5)`. A failed
+`<config dir>/model-router/sessions/<session id>.json`, the config dir being
+`$CLAUDE_CONFIG_DIR`, else `$HOME/.claude` (`$USERPROFILE` on Windows); no file
+without either. `examples/statusline.sh` reads it by `session_id` and, when its
+base id differs from `model.id`'s, draws `Haiku 4.5 ← routed (Opus 5.5)`. A failed
 write is ignored. Mods cannot delete files, so each session leaves its
 ~60-byte file behind.
 
@@ -154,8 +157,11 @@ bounded by its timeout and always resolves.
 
 - `classify.test.ts`: each rule, ambiguity, length thresholds.
 - `cost.test.ts`: upgrade always switches; cold cache downgrade switches;
-  warm cache on a large context keeps; context window keeps; unknown id keeps.
+  warm cache on a large context keeps; context window keeps; unknown id keeps;
+  Bedrock and Vertex spellings priced and recognised.
 - `router.test.ts` (`claude plugin test`): prefix stripped and model forced;
   `turn.step` rewritten for every step of a turn; subagent step untouched;
-  router off leaves model; pin wins over rules; classifier failure leaves
-  model; `/router stats` answers text.
+  router off leaves model; pin wins over rules; classifier failure (or a
+  classifier that throws) leaves model; an unpriced session model is said
+  once; the status line file follows `CLAUDE_CONFIG_DIR`; `/router stats`
+  answers text.

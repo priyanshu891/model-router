@@ -41,14 +41,22 @@ export const CACHE_TTL_MS = 5 * 60 * 1000
 const STEPS = 3
 const OUTPUT_TOKENS = 1_500
 
-/** A model id as priced: no `[1m]` suffix, no `aws/` prefix, no date. */
+/**
+ * A model id as priced: no `[1m]` suffix, no `aws/` or Bedrock `us.anthropic.`
+ * prefix, no Bedrock `-v1:0` version, no `-20251001` or Vertex `@20251001` date.
+ */
 const baseOf = (model: string) =>
   model
     .replace(/\[.*\]$/, '')
     .replace(/^[\w-]+\//, '')
-    .replace(/-\d{8}$/, '')
+    .replace(/^(?:[a-z-]+\.)?anthropic\./, '')
+    .replace(/-v\d+(?::\d+)?$/, '')
+    .replace(/[-@]\d{8}$/, '')
 
 const cardOf = (model: string): Card | undefined => CARDS[baseOf(model)]
+
+/** Whether the table has a price for `model`. */
+export const isPriced = (model: string) => cardOf(model) !== undefined
 
 export const tierOf = (model: string, models: Models): RouterTier | undefined =>
   TIERS.find(tier => baseOf(models[tier]) === baseOf(model))

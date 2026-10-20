@@ -1,5 +1,6 @@
 {
-  "name": "local-mods",
-  "owner": { "name": "Priyanshu Rai" },
+  "name": "model-router",
+  "description": "Routes each Claude Code turn to Haiku, Sonnet or Opus by what it asks",
+  "owner": { "name": "Priyanshu Rai", "url": "https://github.com/priyanshu891" },
   "plugins": [{ "name": "model-router", "source": "./" }]
 }
