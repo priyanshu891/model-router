@@ -1,0 +1,5 @@
+{
+  "name": "local-mods",
+  "owner": { "name": "Priyanshu Rai" },
+  "plugins": [{ "name": "model-router", "source": "./" }]
+}

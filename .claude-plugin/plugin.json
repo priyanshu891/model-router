@@ -1,0 +1,26 @@
+{
+  "name": "model-router",
+  "version": "0.2.0",
+  "description": "Routes each turn to Haiku, Sonnet or Opus by query difficulty, without letting a model switch cost more than it saves",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "haikuModel": {
+      "type": "string",
+      "title": "Haiku-tier model",
+      "description": "Model id for lookups and the classifier; must be one your API key or gateway serves",
+      "default": "claude-haiku-5-5"
+    },
+    "sonnetModel": {
+      "type": "string",
+      "title": "Sonnet-tier model",
+      "description": "Model id for ordinary coding turns",
+      "default": "claude-sonnet-5-5"
+    },
+    "opusModel": {
+      "type": "string",
+      "title": "Opus-tier model",
+      "description": "Model id for hard turns",
+      "default": "claude-opus-5-5"
+    }
+  }
+}
